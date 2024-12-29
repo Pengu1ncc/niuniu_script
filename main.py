@@ -156,16 +156,8 @@ def process_wallet(rpc, private_key, data, repeat_count):
             print(f"第 {iteration + 1}/{repeat_count} 次交易的交易签名: {tx_signature}")
 
             # 检测上一笔交易是否成功
-            while True:
-                if check_transaction_status(client, tx_signature):
-                    # 随机等待 5-10 秒
-                    sleep_time = random.uniform(1, 3)
-                    print(f"随机等待 {sleep_time:.2f} 秒...")
-                    time.sleep(sleep_time)
-                    break
-                else:
-                    print("交易尚未确认，等待 3 秒后重试...")
-                    time.sleep(3)  # 等待 5 秒后重试
+            if not check_transaction_status(client, tx_signature):
+                print(f"交易未确认，跳过当前交易，交易签名: {tx_signature}")
 
         except Exception as e:
             print(f"第 {iteration + 1}/{repeat_count} 次交易发生错误: {e}")
