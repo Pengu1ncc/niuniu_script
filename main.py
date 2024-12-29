@@ -69,41 +69,55 @@ def send_modified_transaction(rpc_url: str, base64_data: str, private_key: list[
         raise RuntimeError(f"交易发送失败: {e}")
 
 
-def check_transaction_status(client: Client, tx_signature: str) -> bool:
+def check_transaction_status(client: Client, tx_signature: str, max_retries: int = 30, retry_interval: int = 5) -> bool:
     """
     检查交易状态，基于 client.get_transaction 的结果。
+    如果超过最大重试次数（max_retries）仍未检测到成功，则跳过这笔交易。
 
     :param client: Solana RPC 客户端。
     :param tx_signature: 交易签名。
-    :return: 如果交易成功返回 True，否则返回 False。
+    :param max_retries: 最大检测重试次数（默认 30 次）。
+    :param retry_interval: 每次检测之间的等待时间，单位：秒（默认 5 秒）。
+    :return: 如果交易成功返回 True，超过重试次数返回 False。
     """
-    try:
-        res = client.get_transaction(tx_signature)  # 获取交易数据
+    retry_count = 0  # 初始化重试计数器
 
-        # 检查是否存在交易数据
-        if res.value is None:
-            print(f"交易未找到或尚未确认，交易签名: {tx_signature}")
-            return False
+    while retry_count < max_retries:
+        try:
+            res = client.get_transaction(tx_signature)  # 获取交易数据
 
-        # 解构交易数据
-        transaction_data = res.value
+            # 检查是否存在交易数据
+            if res.value is None:
+                print(f"交易未找到或尚未确认，交易签名: {tx_signature}，重试次数: {retry_count + 1}/{max_retries}")
+            else:
+                # 解构交易数据
+                transaction_data = res.value
 
-        # 检查元数据是否存在
-        if transaction_data.transaction.meta is None:
-            print(f"交易的元数据不存在，交易可能未完成，交易签名: {tx_signature}")
-            return False
+                # 检查元数据是否存在
+                if transaction_data.transaction.meta is None:
+                    print(f"交易的元数据不存在，交易可能未完成，交易签名: {tx_signature}，重试次数: {retry_count + 1}/{max_retries}")
+                elif transaction_data.transaction.meta.err is None:
+                    # 如果交易成功
+                    print(f"交易成功，交易签名: {tx_signature}")
+                    return True
+                else:
+                    # 如果交易失败
+                    print(f"交易失败或存在错误，交易签名: {tx_signature}，错误详情: {transaction_data.transaction.meta.err}")
+                    return False
 
-        # 检查是否有错误
-        if transaction_data.transaction.meta.err is None:
-            print(f"交易成功，交易签名: {tx_signature}")
-            return True
-        else:
-            print(f"交易失败或存在错误，交易签名: {tx_signature}, 错误详情: {transaction_data.transaction.meta.err}")
-            return False
+            # 增加重试计数并等待
+            retry_count += 1
+            time.sleep(retry_interval)
 
-    except Exception as e:
-        print(f"检测交易状态时发生错误: {e}")
-        return False
+        except Exception as e:
+            print(f"检测交易状态时发生错误: {e}，重试次数: {retry_count + 1}/{max_retries}")
+            retry_count += 1
+            time.sleep(retry_interval)
+
+    # 如果超过最大重试次数
+    print(f"超过最大重试次数（{max_retries} 次），跳过交易，交易签名: {tx_signature}")
+    return False
+
 
 
 def read_data_from_csv(file_path: str) -> list[dict]:
@@ -145,13 +159,13 @@ def process_wallet(rpc, private_key, data, repeat_count):
             while True:
                 if check_transaction_status(client, tx_signature):
                     # 随机等待 5-10 秒
-                    sleep_time = random.uniform(2, 5)
+                    sleep_time = random.uniform(1, 3)
                     print(f"随机等待 {sleep_time:.2f} 秒...")
                     time.sleep(sleep_time)
                     break
                 else:
-                    print("交易尚未确认，等待 5 秒后重试...")
-                    time.sleep(5)  # 等待 5 秒后重试
+                    print("交易尚未确认，等待 3 秒后重试...")
+                    time.sleep(3)  # 等待 5 秒后重试
 
         except Exception as e:
             print(f"第 {iteration + 1}/{repeat_count} 次交易发生错误: {e}")
@@ -159,6 +173,7 @@ def process_wallet(rpc, private_key, data, repeat_count):
 
 # 主流程
 if __name__ == "__main__":
+    # rpc = "https://eclipse.helius-rpc.com/"  # 替换为你的 RPC URL
     rpc = "https://eclipse.lgns.net"  # 替换为你的 RPC URL
     csv_file = "transactions.csv"  # CSV 文件路径
 
